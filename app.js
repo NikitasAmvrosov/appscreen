@@ -90,7 +90,8 @@ const state = {
             subheadlineUnderline: false,
             subheadlineStrikethrough: false,
             subheadlineColor: '#ffffff',
-            subheadlineOpacity: 70
+            subheadlineOpacity: 70,
+            offsetX: 50
         },
         elements: [],
         popouts: []
@@ -103,6 +104,10 @@ const baseTextDefaults = JSON.parse(JSON.stringify(state.defaults.text));
 let selectedElementId = null;
 let selectedPopoutId = null;
 let draggingElement = null;
+let textBoundingBox = null;   // { x, y, w, h } in canvas coords, set during drawText()
+let textSelected = false;
+let draggingText = null;      // { startX, startY, origOffsetX, origOffsetY, origPosition }
+let draggingTextResize = null; // { startY, origSize }
 
 // Preload laurel SVG images for element frames
 const laurelImages = {};
@@ -1926,7 +1931,8 @@ function resetStateToDefaults() {
             subheadlineUnderline: false,
             subheadlineStrikethrough: false,
             subheadlineColor: '#ffffff',
-            subheadlineOpacity: 70
+            subheadlineOpacity: 70,
+            offsetX: 50
         }
     };
 }
@@ -2878,12 +2884,68 @@ function setupElementCanvasDrag() {
             draggingElement = null;
             activeSnapGuides = { x: null, y: null };
             canvasWrapper.classList.remove('element-dragging');
-            updateCanvas(); // redraw without guides
+            updateCanvas();
         }
+        if (draggingText || draggingTextResize) {
+            draggingText = null;
+            draggingTextResize = null;
+            canvasWrapper.classList.remove('element-dragging');
+            updateCanvas();
+        }
+    }
+
+    function hitTestTextResizeHandle(cx, cy) {
+        if (!textBoundingBox) return false;
+        const dims = getCanvasDimensions();
+        const { x, y, w, h } = textBoundingBox;
+        const hx = x + w / 2;
+        const hy = y + h;
+        const hr = dims.width * 0.025;
+        return Math.hypot(cx - hx, cy - hy) <= hr;
+    }
+
+    function hitTestTextBox(cx, cy) {
+        if (!textBoundingBox) return false;
+        const { x, y, w, h } = textBoundingBox;
+        return cx >= x && cx <= x + w && cy >= y && cy <= y + h;
     }
 
     previewCanvas.addEventListener('mousedown', (e) => {
         const coords = getCanvasCoords(e);
+
+        // Check text resize handle first (small target, must be before body hit)
+        if (hitTestTextResizeHandle(coords.x, coords.y)) {
+            e.preventDefault();
+            const text = getTextSettings();
+            const headlineLayout = getEffectiveLayout(text, text.currentHeadlineLang || 'en');
+            draggingTextResize = { startY: coords.y, origSize: headlineLayout.headlineSize };
+            textSelected = true;
+            canvasWrapper.classList.add('element-dragging');
+            return;
+        }
+
+        // Check text body for drag
+        if (hitTestTextBox(coords.x, coords.y)) {
+            e.preventDefault();
+            const text = getTextSettings();
+            const layoutSettings = getEffectiveLayout(text, text.currentHeadlineLang || 'en');
+            draggingText = {
+                startX: coords.x,
+                startY: coords.y,
+                origOffsetX: text.offsetX ?? 50,
+                origOffsetY: layoutSettings.offsetY,
+                origPosition: layoutSettings.position
+            };
+            textSelected = true;
+            canvasWrapper.classList.add('element-dragging');
+            return;
+        }
+
+        // Clicking outside text deselects it
+        if (textSelected) {
+            textSelected = false;
+            updateCanvas();
+        }
 
         // Check popouts first (they render on top of elements above-screenshot)
         const popoutHit = hitTestPopouts(coords.x, coords.y);
@@ -2945,16 +3007,63 @@ function setupElementCanvasDrag() {
     });
 
     window.addEventListener('mousemove', (e) => {
+        const coords = getCanvasCoords(e);
+
+        if (draggingTextResize) {
+            e.preventDefault();
+            const dims = getCanvasDimensions();
+            const dy = coords.y - draggingTextResize.startY;
+            const newSize = Math.max(12, Math.round(draggingTextResize.origSize + dy * 0.5));
+            setTextLanguageValue('headlineSize', newSize);
+            document.getElementById('headline-size') && (document.getElementById('headline-size').value = newSize);
+            document.getElementById('headline-size-value') && (document.getElementById('headline-size-value').textContent = newSize + 'px');
+            updateCanvas();
+            return;
+        }
+
+        if (draggingText) {
+            e.preventDefault();
+            const dims = getCanvasDimensions();
+            const dx = coords.x - draggingText.startX;
+            const dy = coords.y - draggingText.startY;
+
+            const newOffsetX = Math.max(10, Math.min(90, draggingText.origOffsetX + (dx / dims.width) * 100));
+
+            // Convert absolute Y to offsetY+position
+            const absY = draggingText.origPosition === 'top'
+                ? dims.height * (draggingText.origOffsetY / 100) + dy
+                : dims.height * (1 - draggingText.origOffsetY / 100) + dy;
+            const clampedY = Math.max(0, Math.min(dims.height, absY));
+            let newPosition, newOffsetY;
+            if (clampedY <= dims.height / 2) {
+                newPosition = 'top';
+                newOffsetY = Math.max(0, Math.min(100, (clampedY / dims.height) * 100));
+            } else {
+                newPosition = 'bottom';
+                newOffsetY = Math.max(0, Math.min(100, ((dims.height - clampedY) / dims.height) * 100));
+            }
+
+            setTextValue('offsetX', newOffsetX);
+            setTextLanguageValue('offsetY', newOffsetY);
+            setTextLanguageValue('position', newPosition);
+            const offsetSlider = document.getElementById('text-offset-y');
+            if (offsetSlider) offsetSlider.value = newOffsetY;
+            updateCanvas();
+            return;
+        }
+
         if (!draggingElement) {
             // Hover detection
-            const coords = getCanvasCoords(e);
             const popoutHit = hitTestPopouts(coords.x, coords.y);
             const hit = popoutHit || hitTestElements(coords.x, coords.y);
-            canvasWrapper.classList.toggle('element-hover', !!hit);
+            const textHit = hitTestTextResizeHandle(coords.x, coords.y) || hitTestTextBox(coords.x, coords.y);
+            canvasWrapper.classList.toggle('element-hover', !!(hit || textHit));
+            previewCanvas.style.cursor = hitTestTextResizeHandle(coords.x, coords.y) ? 'ns-resize'
+                : textHit ? 'move' : '';
             return;
         }
         e.preventDefault();
-        applyDragMove(getCanvasCoords(e));
+        applyDragMove(coords);
     });
 
     window.addEventListener('mouseup', () => clearDrag());
@@ -7300,6 +7409,7 @@ function drawTextToContext(context, dims, txt) {
     if (!headline && !subheadline) return;
 
     const padding = dims.width * 0.08;
+    const centerX = dims.width * ((txt.offsetX ?? 50) / 100);
     const textY = layoutSettings.position === 'top'
         ? dims.height * (layoutSettings.offsetY / 100)
         : dims.height * (1 - layoutSettings.offsetY / 100);
@@ -7327,23 +7437,19 @@ function drawTextToContext(context, dims, txt) {
         lines.forEach((line, i) => {
             const y = currentY + i * lineHeight;
             lastLineY = y;
-            context.fillText(line, dims.width / 2, y);
+            context.fillText(line, centerX, y);
 
-            // Calculate text metrics for decorations
             const textWidth = context.measureText(line).width;
             const fontSize = headlineLayout.headlineSize;
             const lineThickness = Math.max(2, fontSize * 0.05);
-            const x = dims.width / 2 - textWidth / 2;
+            const x = centerX - textWidth / 2;
 
-            // Draw underline
             if (txt.headlineUnderline) {
                 const underlineY = layoutSettings.position === 'top'
                     ? y + fontSize * 0.9
                     : y + fontSize * 0.1;
                 context.fillRect(x, underlineY, textWidth, lineThickness);
             }
-
-            // Draw strikethrough
             if (txt.headlineStrikethrough) {
                 const strikeY = layoutSettings.position === 'top'
                     ? y + fontSize * 0.4
@@ -7352,20 +7458,14 @@ function drawTextToContext(context, dims, txt) {
             }
         });
 
-        // Track where subheadline should start (below the bottom edge of headline)
-        // The gap between headline and subheadline should be (lineHeight - fontSize)
-        // This is the "extra" spacing beyond the text itself
         const gap = lineHeight - headlineLayout.headlineSize;
         if (layoutSettings.position === 'top') {
-            // For top: lastLineY is top of last line, add fontSize to get bottom, then add gap
             currentY = lastLineY + headlineLayout.headlineSize + gap;
         } else {
-            // For bottom: lastLineY is already the bottom of last line, just add gap
             currentY = lastLineY + gap;
         }
     }
 
-    // Draw subheadline (always below headline visually)
     if (subheadline) {
         const subFontStyle = txt.subheadlineItalic ? 'italic' : 'normal';
         const subWeight = txt.subheadlineWeight || '400';
@@ -7374,34 +7474,23 @@ function drawTextToContext(context, dims, txt) {
 
         const lines = wrapText(context, subheadline, dims.width - padding * 2);
         const subLineHeight = subheadlineLayout.subheadlineSize * 1.4;
-
-        // Subheadline starts after headline with gap determined by headline lineHeight
-        // For bottom position, switch to 'top' baseline so subheadline draws downward
         const subY = currentY;
-        if (layoutSettings.position === 'bottom') {
-            context.textBaseline = 'top';
-        }
+        if (layoutSettings.position === 'bottom') context.textBaseline = 'top';
 
         lines.forEach((line, i) => {
             const y = subY + i * subLineHeight;
-            context.fillText(line, dims.width / 2, y);
+            context.fillText(line, centerX, y);
 
-            // Calculate text metrics for decorations
             const textWidth = context.measureText(line).width;
             const fontSize = subheadlineLayout.subheadlineSize;
             const lineThickness = Math.max(2, fontSize * 0.05);
-            const x = dims.width / 2 - textWidth / 2;
+            const x = centerX - textWidth / 2;
 
-            // Draw underline (using 'top' baseline for subheadline)
             if (txt.subheadlineUnderline) {
-                const underlineY = y + fontSize * 0.9;
-                context.fillRect(x, underlineY, textWidth, lineThickness);
+                context.fillRect(x, y + fontSize * 0.9, textWidth, lineThickness);
             }
-
-            // Draw strikethrough
             if (txt.subheadlineStrikethrough) {
-                const strikeY = y + fontSize * 0.4;
-                context.fillRect(x, strikeY, textWidth, lineThickness);
+                context.fillRect(x, y + fontSize * 0.4, textWidth, lineThickness);
             }
         });
 
@@ -7877,7 +7966,6 @@ function drawText() {
     const dims = getCanvasDimensions();
     const text = getTextSettings();
 
-    // Check enabled states (default headline to true for backwards compatibility)
     const headlineEnabled = text.headlineEnabled !== false;
     const subheadlineEnabled = text.subheadlineEnabled || false;
 
@@ -7888,13 +7976,13 @@ function drawText() {
     const subheadlineLayout = getEffectiveLayout(text, subheadlineLang);
     const layoutSettings = getEffectiveLayout(text, layoutLang);
 
-    // Get current language text (only if enabled)
     const headline = headlineEnabled && text.headlines ? (text.headlines[headlineLang] || '') : '';
     const subheadline = subheadlineEnabled && text.subheadlines ? (text.subheadlines[subheadlineLang] || '') : '';
 
-    if (!headline && !subheadline) return;
+    if (!headline && !subheadline) { textBoundingBox = null; return; }
 
     const padding = dims.width * 0.08;
+    const centerX = dims.width * ((text.offsetX ?? 50) / 100);
     const textY = layoutSettings.position === 'top'
         ? dims.height * (layoutSettings.offsetY / 100)
         : dims.height * (1 - layoutSettings.offsetY / 100);
@@ -7903,6 +7991,8 @@ function drawText() {
     ctx.textBaseline = layoutSettings.position === 'top' ? 'top' : 'bottom';
 
     let currentY = textY;
+    let blockTop = textY;
+    let blockBottom = textY;
 
     // Draw headline
     if (headline) {
@@ -7915,52 +8005,46 @@ function drawText() {
 
         if (layoutSettings.position === 'bottom') {
             currentY -= (lines.length - 1) * lineHeight;
+            blockTop = currentY - headlineLayout.headlineSize;
         }
 
         let lastLineY;
         lines.forEach((line, i) => {
             const y = currentY + i * lineHeight;
             lastLineY = y;
-            ctx.fillText(line, dims.width / 2, y);
+            ctx.fillText(line, centerX, y);
 
-            // Calculate text metrics for decorations
-            // When textBaseline is 'top', y is at top of text; when 'bottom', y is at bottom
             const textWidth = ctx.measureText(line).width;
             const fontSize = headlineLayout.headlineSize;
             const lineThickness = Math.max(2, fontSize * 0.05);
-            const x = dims.width / 2 - textWidth / 2;
+            const x = centerX - textWidth / 2;
 
-            // Draw underline
             if (text.headlineUnderline) {
                 const underlineY = layoutSettings.position === 'top'
-                    ? y + fontSize * 0.9  // Below text when baseline is top
-                    : y + fontSize * 0.1; // Below text when baseline is bottom
+                    ? y + fontSize * 0.9
+                    : y + fontSize * 0.1;
                 ctx.fillRect(x, underlineY, textWidth, lineThickness);
             }
-
-            // Draw strikethrough
             if (text.headlineStrikethrough) {
                 const strikeY = layoutSettings.position === 'top'
-                    ? y + fontSize * 0.4  // Middle of text when baseline is top
-                    : y - fontSize * 0.4; // Middle of text when baseline is bottom
+                    ? y + fontSize * 0.4
+                    : y - fontSize * 0.4;
                 ctx.fillRect(x, strikeY, textWidth, lineThickness);
             }
         });
 
-        // Track where subheadline should start (below the bottom edge of headline)
-        // The gap between headline and subheadline should be (lineHeight - fontSize)
-        // This is the "extra" spacing beyond the text itself
         const gap = lineHeight - headlineLayout.headlineSize;
         if (layoutSettings.position === 'top') {
-            // For top: lastLineY is top of last line, add fontSize to get bottom, then add gap
+            blockTop = textY;
+            blockBottom = lastLineY + headlineLayout.headlineSize;
             currentY = lastLineY + headlineLayout.headlineSize + gap;
         } else {
-            // For bottom: lastLineY is already the bottom of last line, just add gap
+            blockBottom = Math.max(blockBottom, lastLineY + gap);
             currentY = lastLineY + gap;
         }
     }
 
-    // Draw subheadline (always below headline visually)
+    // Draw subheadline
     if (subheadline) {
         const subFontStyle = text.subheadlineItalic ? 'italic' : 'normal';
         const subWeight = text.subheadlineWeight || '400';
@@ -7969,41 +8053,63 @@ function drawText() {
 
         const lines = wrapText(ctx, subheadline, dims.width - padding * 2);
         const subLineHeight = subheadlineLayout.subheadlineSize * 1.4;
-
-        // Subheadline starts after headline with gap determined by headline lineHeight
-        // For bottom position, switch to 'top' baseline so subheadline draws downward
         const subY = currentY;
-        if (layoutSettings.position === 'bottom') {
-            ctx.textBaseline = 'top';
-        }
+
+        if (layoutSettings.position === 'bottom') ctx.textBaseline = 'top';
 
         lines.forEach((line, i) => {
             const y = subY + i * subLineHeight;
-            ctx.fillText(line, dims.width / 2, y);
+            ctx.fillText(line, centerX, y);
 
-            // Calculate text metrics for decorations
             const textWidth = ctx.measureText(line).width;
             const fontSize = subheadlineLayout.subheadlineSize;
             const lineThickness = Math.max(2, fontSize * 0.05);
-            const x = dims.width / 2 - textWidth / 2;
+            const x = centerX - textWidth / 2;
 
-            // Draw underline (using 'top' baseline for subheadline)
             if (text.subheadlineUnderline) {
-                const underlineY = y + fontSize * 0.9;
-                ctx.fillRect(x, underlineY, textWidth, lineThickness);
+                ctx.fillRect(x, y + fontSize * 0.9, textWidth, lineThickness);
             }
-
-            // Draw strikethrough
             if (text.subheadlineStrikethrough) {
-                const strikeY = y + fontSize * 0.4;
-                ctx.fillRect(x, strikeY, textWidth, lineThickness);
+                ctx.fillRect(x, y + fontSize * 0.4, textWidth, lineThickness);
             }
         });
 
-        // Restore baseline if we changed it
-        if (layoutSettings.position === 'bottom') {
-            ctx.textBaseline = 'bottom';
-        }
+        blockBottom = subY + lines.length * subLineHeight;
+
+        if (layoutSettings.position === 'bottom') ctx.textBaseline = 'bottom';
+    }
+
+    // Cache bounding box for hit testing (in canvas coords)
+    const pad = dims.width * 0.04;
+    textBoundingBox = {
+        x: pad,
+        y: blockTop - pad,
+        w: dims.width - pad * 2,
+        h: blockBottom - blockTop + pad * 2
+    };
+
+    // Draw selection UI
+    if (textSelected) {
+        const { x, y, w, h } = textBoundingBox;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+        ctx.lineWidth = Math.max(1, dims.width * 0.002);
+        ctx.setLineDash([dims.width * 0.012, dims.width * 0.008]);
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+
+        // Resize handle at bottom-center
+        const hx = x + w / 2;
+        const hy = y + h;
+        const hr = dims.width * 0.018;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(hx, hy, hr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+        ctx.lineWidth = Math.max(1, dims.width * 0.002);
+        ctx.stroke();
+        ctx.restore();
     }
 }
 

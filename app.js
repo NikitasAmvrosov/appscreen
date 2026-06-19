@@ -15,11 +15,11 @@ const state = {
             gradient: {
                 angle: 135,
                 stops: [
-                    { color: '#667eea', position: 0 },
-                    { color: '#764ba2', position: 100 }
+                    { color: '#000000', position: 0 },
+                    { color: '#000000', position: 100 }
                 ]
             },
-            solid: '#1a1a2e',
+            solid: '#000000',
             image: null,
             imageFit: 'cover',
             imageBlur: 0,
@@ -1855,11 +1855,11 @@ function resetStateToDefaults() {
             gradient: {
                 angle: 135,
                 stops: [
-                    { color: '#667eea', position: 0 },
-                    { color: '#764ba2', position: 100 }
+                    { color: '#000000', position: 0 },
+                    { color: '#000000', position: 100 }
                 ]
             },
-            solid: '#1a1a2e',
+            solid: '#000000',
             image: null,
             imageFit: 'cover',
             imageBlur: 0,

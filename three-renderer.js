@@ -151,17 +151,14 @@ function initThreeJS() {
     threeCamera = new THREE.PerspectiveCamera(35, aspect, 0.1, 1000);
     threeCamera.position.set(0, 0, 6);
 
-    // Create renderer - disable antialiasing for faster interactive performance
-    // Quality rendering is done at export time with higher resolution
     threeRenderer = new THREE.WebGLRenderer({
-        antialias: false,  // Disable for better performance
+        antialias: true,
         alpha: true,
         preserveDrawingBuffer: true,
         powerPreference: 'high-performance'
     });
     threeRenderer.setSize(400, 700);
-    // Use device pixel ratio of 1 for fastest interactive rendering
-    threeRenderer.setPixelRatio(1);
+    threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     threeRenderer.outputEncoding = THREE.sRGBEncoding;
     threeRenderer.toneMapping = THREE.NoToneMapping;
     // Disable automatic clearing - we control this manually

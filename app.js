@@ -58,7 +58,7 @@ const state = {
             headlines: { en: '' },
             headlineLanguages: ['en'],
             currentHeadlineLang: 'en',
-            headlineFont: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
+            headlineFont: 'Inter',
             headlineSize: 100,
             headlineWeight: '600',
             headlineItalic: false,
@@ -83,7 +83,7 @@ const state = {
             subheadlines: { en: '' },
             subheadlineLanguages: ['en'],
             currentSubheadlineLang: 'en',
-            subheadlineFont: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
+            subheadlineFont: 'Inter',
             subheadlineSize: 50,
             subheadlineWeight: '400',
             subheadlineItalic: false,
@@ -324,7 +324,7 @@ function addGraphicElement(img, src, name) {
         src: src,
         name: name || 'Graphic',
         text: '',
-        font: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
+        font: 'Inter',
         fontSize: 60,
         fontWeight: '600',
         fontColor: '#ffffff',
@@ -357,7 +357,7 @@ function addTextElement() {
         name: 'Text',
         text: 'Your Text',
         texts: { [state.currentLanguage]: 'Your Text' },
-        font: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
+        font: 'Inter',
         fontSize: 60,
         fontWeight: '600',
         fontColor: '#ffffff',
@@ -432,7 +432,7 @@ function addEmojiElement(emoji, name) {
         image: null,
         src: null,
         text: '',
-        font: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
+        font: 'Inter',
         fontSize: 60,
         fontWeight: '600',
         fontColor: '#ffffff',
@@ -468,7 +468,7 @@ async function addIconElement(iconName) {
         src: null,
         name: iconName,
         text: '',
-        font: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
+        font: 'Inter',
         fontSize: 60,
         fontWeight: '600',
         fontColor: '#ffffff',
@@ -1190,18 +1190,16 @@ function updateSingleFontPickerPreview(hiddenId, previewId, stateKey) {
     hiddenInput.value = fontValue;
 
     // Extract font name from value
-    let fontName = 'SF Pro Display';
+    let fontName = fontValue;
     const systemFont = googleFonts.system.find(f => f.value === fontValue);
     if (systemFont) {
         fontName = systemFont.name;
     } else {
-        // Try to extract from Google Font value like "'Roboto', sans-serif"
         const match = fontValue.match(/'([^']+)'/);
         if (match) {
             fontName = match[1];
-            // Load the font if it's a Google Font
-            loadGoogleFont(fontName);
         }
+        loadGoogleFont(fontName);
     }
 
     preview.textContent = fontName;
@@ -1218,7 +1216,7 @@ function updateElementFontPickerPreview(el) {
 
     hiddenInput.value = fontValue;
 
-    let fontName = 'SF Pro Display';
+    let fontName = fontValue;
     const systemFont = googleFonts.system.find(f => f.value === fontValue);
     if (systemFont) {
         fontName = systemFont.name;
@@ -1226,8 +1224,8 @@ function updateElementFontPickerPreview(el) {
         const match = fontValue.match(/'([^']+)'/);
         if (match) {
             fontName = match[1];
-            loadGoogleFont(fontName);
         }
+        loadGoogleFont(fontName);
     }
 
     preview.textContent = fontName;
@@ -1479,6 +1477,7 @@ function initSync() {
     setupPopoutEventListeners();
     setupSliderResetButtons();
     initFontPicker();
+    loadGoogleFont('Inter');
     updateGradientStopsUI();
     updateCanvas();
     // Then load saved data asynchronously
@@ -1895,7 +1894,7 @@ function resetStateToDefaults() {
             headlines: { en: '' },
             headlineLanguages: ['en'],
             currentHeadlineLang: 'en',
-            headlineFont: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
+            headlineFont: 'Inter',
             headlineSize: 100,
             headlineWeight: '600',
             headlineItalic: false,
@@ -1920,7 +1919,7 @@ function resetStateToDefaults() {
             subheadlines: { en: '' },
             subheadlineLanguages: ['en'],
             currentSubheadlineLang: 'en',
-            subheadlineFont: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
+            subheadlineFont: 'Inter',
             subheadlineSize: 50,
             subheadlineWeight: '400',
             subheadlineItalic: false,
